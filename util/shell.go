@@ -20,5 +20,5 @@ func ExecLinuxShell(s string) (string, error) {
 		return "", err
 	}
 
-	return result.String(), err
+	return result.String(), nil
 }

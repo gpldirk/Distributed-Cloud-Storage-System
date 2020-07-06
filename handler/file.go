@@ -93,12 +93,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		} else if config.CurrentStoreType == common.StoreOSS {
 			// 文件写入OSS
 			ossPath := "oss/" + fileMeta.FileSha1
-
-			options := []oss.Option{
-				oss.ContentDisposition("attachment;filename=\"" + fileMeta.FileName + "\""),
-			}
-
-			err = oss.Bucket().PutObject(ossPath, newFile, options)
+			err = oss.Bucket().PutObject(ossPath, newFile)
 			if err != nil {
 				log.Println(err.Error())
 				w.Write([]byte("Upload file to oss failed"))

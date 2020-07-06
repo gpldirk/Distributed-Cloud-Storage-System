@@ -1,7 +1,3 @@
-// @Title  文件工具方法
-// @Description  文件操作相关工具方法
-// @Author　xiaomo
-// @Update  2020/04/01
 package util
 
 import (
@@ -78,7 +74,7 @@ func RemovePathByShell(destPath string) bool {
 }
 
 // ComputeFileSizeByShell : 通过调用shell来计算文件大小
-// @return  (string, error): (文件hash, 错误信息)
+// @return  (int, error): (文件大小, 错误信息)
 func ComputeFileSizeByShell(destPath string) (int, error) {
 	cmdStr := strings.Replace(FileSizeCMD, "$1", destPath, 1)
 	fSizeCmd := exec.Command("bash", "-c", cmdStr)
