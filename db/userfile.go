@@ -18,8 +18,8 @@ type UserFile struct {
 
 // OnUserFileUploadFinished : 更新用户文件表
 func OnUserFileUploadFinished(username, filehash, filename string, filesize int64) bool {
-	stmt, err := mysql.DBConn().Prepare("insert ignore into tbl_user_file (user_name, file_sha1, file_name, " +
-		"file_size, upload_at, status) values (?, ?, ?, ?, ?, 1)")
+	stmt, err := mysql.DBConn().Prepare("insert ignore into tbl_user_file (`user_name`, `file_sha1`, `file_name`, " +
+		"`file_size`, `upload_at`, `status`) values (?, ?, ?, ?, ?, 1)")
 	if err != nil {
 		log.Println(err.Error())
 		return false
@@ -33,7 +33,7 @@ func OnUserFileUploadFinished(username, filehash, filename string, filesize int6
 	}
 	if rows, err := rf.RowsAffected(); err == nil {
 		if rows <= 0 {
-			log.Printf("File with filehash:%s has been uploaded before\n", filehash)
+			log.Printf("File with hash:%s has been uploaded before\n", filehash)
 		}
 		return true
 	}
@@ -43,7 +43,7 @@ func OnUserFileUploadFinished(username, filehash, filename string, filesize int6
 // QueryUserFileMetas : 批量获取指定用户拥有的文件元信息
 func QueryUserFileMetas(username string, limit int) ([]UserFile, error) {
 	stmt, err := mysql.DBConn().Prepare("select file_sha1, file_name, file_size, upload_at, last_update " +
-		"from tbl_user_file where user_name=? limit ?")
+		"from tbl_user_file where user_name=? and status!=2 limit ?")
 	if err != nil {
 		log.Println(err.Error())
 		return nil, err
@@ -104,7 +104,7 @@ func DeleteUserFile(username, filehash string) bool {
 	return true
 }
 
-// QueryUserFileMeta : 获取用户单个文件信息
+// QueryUserFileMeta : 获取当前用户单个文件信息
 func QueryUserFileMeta(username string, filehash string) (*UserFile, error) {
 	stmt, err := mysql.DBConn().Prepare("select file_sha1, file_name, file_size, upload_at, last_update " +
 		"from tbl_user_file where user_name=? and file_sha1=? limit 1")
@@ -121,6 +121,24 @@ func QueryUserFileMeta(username string, filehash string) (*UserFile, error) {
 		return nil, err
 	}
 	return &userFile, nil
+}
+
+// IsUserFileUploaded : 判断当前user是否上传过当前文件
+func IsUserFileUploaded(username, filehash string) bool {
+	stmt, err := mysql.DBConn().Prepare("select 1 from tbl_user_file where user_name=? and file_sha1=? and status=1 limit 1")
+	if err != nil {
+		log.Println(err.Error())
+		return false
+	}
+	rows, err := stmt.Query(username, filehash)
+	if err != nil {
+		log.Println(err.Error())
+		return false
+	} else if rows == nil || !rows.Next() {
+		return false
+	}
+
+	return true
 }
 
 

@@ -95,7 +95,7 @@ func UpdateFileMetaDB(fileMeta FileMeta) bool {
 	return db.OnFileUploadFinished(fileMeta.FileSha1, fileMeta.FileName, fileMeta.FileSize, fileMeta.Location)
 }
 
-// OnFileRemovedDB : 删除文件
+// OnFileRemovedDB : 删除文件元信息
 func OnFileRemovedDB(filehash string) bool {
 	return db.OnFileRemoved(filehash)
 }

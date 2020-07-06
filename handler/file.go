@@ -3,8 +3,12 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
+	"github.com/cloud/common"
+	"github.com/cloud/config"
 	"github.com/cloud/db"
 	"github.com/cloud/meta"
+	"github.com/cloud/store/ceph"
+	"github.com/cloud/store/oss"
 	"github.com/cloud/util"
 	"io"
 	"io/ioutil"
@@ -14,6 +18,17 @@ import (
 	"strconv"
 	"time"
 )
+
+func init() {
+	if err := os.MkdirAll(config.TempLocalRootDir, 0744); err != nil {
+		log.Println(err.Error())
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(config.MergeLocalRootDir, 0744); err != nil {
+		log.Println(err.Error())
+		os.Exit(1)
+	}
+}
 
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
@@ -36,9 +51,10 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		defer file.Close()
 
 		// 创建文件元信息对象
+		tmpPath := config.TempLocalRootDir + header.Filename
 		fileMeta := meta.FileMeta{
 			FileName: header.Filename,
-			Location: "/tmp/" + header.Filename,
+			Location: tmpPath,
 			UploadAt: time.Now().Format("2016-01-02 15:04:05"),
 		}
 		
@@ -50,7 +66,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		defer newFile.Close()
 
-		// 将接收文件流copy到新的文件中
+		// 将接收文件流copy到本地文件中
 		fileMeta.FileSize, err = io.Copy(newFile, file)
 		if err != nil {
 			log.Println(err.Error())
@@ -59,11 +75,54 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 		newFile.Seek(0, 0)
 		fileMeta.FileSha1 = util.FileSha1(newFile)
+
+		newFile.Seek(0, 0)
+		mergePath := config.MergeLocalRootDir + fileMeta.FileSha1
+		// 将文件以同步/异步方式转移到Ceph/OSS
+		if config.CurrentStoreType == common.StoreCeph {
+			// 文件写入ceph
+			data, _ := ioutil.ReadAll(newFile)
+			cephPath := "/ceph/" + fileMeta.FileSha1
+			err = ceph.PutObject("userfile", cephPath, data)
+			if err != nil {
+				log.Println(err.Error())
+				w.Write([]byte("Upload file to ceph failed"))
+				return
+			}
+			fileMeta.Location = cephPath
+		} else if config.CurrentStoreType == common.StoreOSS {
+			// 文件写入OSS
+			ossPath := "oss/" + fileMeta.FileSha1
+
+			options := []oss.Option{
+				oss.ContentDisposition("attachment;filename=\"" + fileMeta.FileName + "\""),
+			}
+
+			err = oss.Bucket().PutObject(ossPath, newFile, options)
+			if err != nil {
+				log.Println(err.Error())
+				w.Write([]byte("Upload file to oss failed"))
+				return
+			}
+			fileMeta.Location = ossPath
+		} else {
+			fileMeta.Location = mergePath
+		}
+
+		// (普通上传/分块上传) 文件统一存储在mergePath
+		err = os.Rename(tmpPath, mergePath)
+		if err != nil {
+			log.Println(err.Error())
+			w.Write([]byte("Upload file failed"))
+			return
+		}
+
 		// 写入唯一文件表
 		if success := meta.UpdateFileMetaDB(fileMeta); !success {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+
 		// 写入用户文件表
 		r.ParseForm()
 		username := r.Form.Get("username")
@@ -73,7 +132,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Redirect(w, r, "/x/view/home.html", http.StatusFound)
+		http.Redirect(w, r, "/static/view/home.html", http.StatusFound)
 	}
 }
 
@@ -110,7 +169,7 @@ func FileQueryHandler(w http.ResponseWriter, r *http.Request) {
 	limitCnt, err := strconv.Atoi(r.Form.Get("limit"))
 	if err != nil {
 		log.Println(err.Error())
-		io.WriteString(w, "Internal server error")
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
@@ -135,38 +194,14 @@ func FileQueryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// DownloadHandler : 通过指定filehash下载某个文件
-func DownloadHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	filehash := r.Form.Get("filehash")
-	fileMeta := meta.GetFileMeta(filehash)
-	file, err := os.Open(fileMeta.Location)
-	if err != nil {
-		log.Println(err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer file.Close()
-
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		log.Println(err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octect-stream")
-	w.Header().Set("content-disposition", "attachment; filename=\"" + fileMeta.FileName + "\"")
-	w.Write(data)
-}
-
 // UpdateFileMetaHandler : 更新文件元信息，通过op指定更新类型(op = 1 -> 修改文件名)
 func UpdateFileMetaHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	opType := r.Form.Get("op")
+	username := r.Form.Get("username")
 	filehash := r.Form.Get("filehash")
 	newFileName := r.Form.Get("filename")
-	if opType != "0" {
+	if opType != "0" || len(newFileName) < 1 {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -175,11 +210,22 @@ func UpdateFileMetaHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	curFileMeta := meta.GetFileMeta(filehash)
-	curFileMeta.FileName = newFileName
-	meta.UpdateFileMeta(curFileMeta)
+	// 更新用户文件表中的文件名，不用更新唯一文件表
+	if success := db.RenameFileName(username, filehash, newFileName); !success {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
-	data, err := json.Marshal(curFileMeta)
+	// 获取最新的文件元信息
+	userFile, err := db.QueryUserFileMeta(username, filehash)
+	if err != nil {
+		log.Println(err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// 将fileMeta序列化返回给用户
+	data, err := json.Marshal(userFile)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -192,12 +238,23 @@ func UpdateFileMetaHandler(w http.ResponseWriter, r *http.Request) {
 // DeleteFileHandler :  删除文件及其元信息
 func DeleteFileHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	username := r.Form.Get("username")
 	filehash := r.Form.Get("filehash")
 
-	fileMeta := meta.GetFileMeta(filehash)
+	// 删除本地文件
+	fileMeta, err := meta.GetFileMetaDB(filehash)
+	if err != nil {
+		log.Println(err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	os.Remove(fileMeta.Location)
 
-	meta.RemoveFileMeta(filehash)
+	/// 删除用户文件表中的一条记录
+	if success := db.DeleteUserFile(username, filehash); !success {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -244,6 +301,5 @@ func TryFastUploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write(resp.JSONBytes())
 	}
-
 	return
 }

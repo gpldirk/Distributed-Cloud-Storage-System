@@ -20,6 +20,7 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/static/view/signup.html", http.StatusFound)
 		return
 	} else if r.Method == http.MethodPost {
+		// 用户注册信息以表单形式提交
 		r.ParseForm()
 		username := r.Form.Get("username")
 		password := r.Form.Get("password")
@@ -44,7 +45,7 @@ func SignInHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/static/view/signin.html", http.StatusFound)
 		return
 	} else if r.Method == "POST" {
-		// 1 校验用户名和密码
+		// 1 解析请求参数
 		r.ParseForm()
 		username := r.Form.Get("username")
 		password := r.Form.Get("password")
@@ -66,7 +67,6 @@ func SignInHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 4 重定向到首页: 发送重定向的url
-		// w.Write([]byte("http://" + r.Host + "/x/view/home.html"))
 		resp := util.RespMsg {
 			Code: 0,
 			Msg:  "OK",
@@ -85,7 +85,7 @@ func SignInHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// UserInfoHandler : 获取指定user信息
+// UserInfoHandler : 获取指定用户信息
 func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 	// 1 解析请求参数
 	r.ParseForm()
@@ -115,7 +115,7 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(resp.JSONBytes())
 }
 
-// GenToken : 位指定user生成40位token　
+// GenToken : 为指定user生成40位token　
 func GenToken(username string) string {
 	// 40位token = MD5(username + timestamp + token_salt) + timestamp[:8]
 	timestamp := fmt.Sprintf("%x", time.Now().Unix())
@@ -124,18 +124,20 @@ func GenToken(username string) string {
 }
 
 // IsTokenValid : 判断token是否有效
-func IsTokenValid(token string) bool {
+func IsTokenValid(username, token string) bool {
 	// 1 判断token的时效性
 	if len(token) != 40 {
 		return false
 	}
 	tokenTS := token[32:40]
-	if util.Hex2Dec(tokenTS) < time.Now().Unix() - 86400 {
+	if util.Hex2Dec(tokenTS) < time.Now().Unix() - 86400 { // 假设时效性为一天
 		return false
 	}
 
 	// 2 从DB查询username对应的token进行对比是否一致
-
-
-	return true
+	if db.GetUserToken(username) != token {
+		return false
+	} else {
+		return true
+	}
 }

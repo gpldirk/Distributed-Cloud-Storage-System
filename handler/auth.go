@@ -11,9 +11,9 @@ func HTTPInterceptor(h http.HandlerFunc) http.HandlerFunc {
 		r.ParseForm()
 		username := r.Form.Get("username")
 		token := r.Form.Get("token")
-		if len(username) < 3 || len(token) < 5 {
+		if len(username) < 3 || !IsTokenValid(username, token) {
 			resp := util.RespMsg{
-				Code: http.StatusForbidden,
+				Code: http.StatusUnauthorized,
 				Msg:  "Invalid Token",
 				Data: nil,
 			}

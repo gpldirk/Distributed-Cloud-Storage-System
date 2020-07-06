@@ -17,7 +17,7 @@ type File struct {
 // OnFileUploadFinished : 上传新文件时在唯一文件表插入文件元信息
 func OnFileUploadFinished(filehash string, filename string, filesize int64, fileaddr string) bool {
 	stmt, err := mysql.DBConn().Prepare("insert ignore into tbl_file " +
-		"(file_sha1, file_name, file_size, file_addr, status) values (?, ?, ?, ?, 1)")
+		"(`file_sha1`, `file_name`, `file_size`, `file_addr`, `status`) values (?, ?, ?, ?, 1)")
 	if err != nil {
 		log.Println(err.Error())
 		return false
@@ -31,7 +31,7 @@ func OnFileUploadFinished(filehash string, filename string, filesize int64, file
 	}
 	if rows, err := rf.RowsAffected(); err == nil {
 		if rows <= 0 {
-			log.Printf("File with hash:%d has been uploaded becore\n", filehash)
+			log.Printf("File with hash:%d has been uploaded before\n", filehash)
 		}
 		return true
 	}
@@ -39,7 +39,7 @@ func OnFileUploadFinished(filehash string, filename string, filesize int64, file
 	return false
 }
 
-// GetFileMeta : 指定filehash，从DB中读取对应元信息
+// GetFileMeta : 指定filehash，从DB中读取对应文件的元信息
 func GetFileMeta(filehash string) (*File, error) {
 	stmt, err := mysql.DBConn().Prepare("select file_sha1, file_name, file_size, file_addr " +
 		"from tbl_file where file_sha1=? and status=1 limit 1")
@@ -52,8 +52,13 @@ func GetFileMeta(filehash string) (*File, error) {
 	tfile := File{}
 	err = stmt.QueryRow(filehash).Scan(&tfile.FileHash, &tfile.FileName, &tfile.FileSize, &tfile.FileAddr)
 	if err != nil {
-		log.Println(err.Error())
-		return nil, err
+		if err == sql.ErrNoRows {
+			log.Printf("No file with hash: %s\n", filehash)
+			return nil, nil
+		} else {
+			log.Println(err.Error())
+			return nil, err
+		}
 	}
 
 	return &tfile, nil
@@ -130,7 +135,7 @@ func OnFileRemoved(filehash string) bool {
 	}
 	if rows, err := rf.RowsAffected(); err == nil {
 		if rows <= 0 {
-			log.Printf("File with filehash:%d has not been uploaded\n", filehash)
+			log.Printf("File with hash:%d has not been uploaded\n", filehash)
 		}
 		return true
 	}
