@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/cloud/config"
 	"github.com/cloud/handler"
 	"log"
 	"net/http"
@@ -39,8 +40,8 @@ func main() {
 	http.HandleFunc("/user/info", handler.HTTPInterceptor(handler.UserInfoHandler))
 
 	// 监听端口
-	fmt.Println("上传服务已启动，监听端口8080...")
-	err := http.ListenAndServe(":8080", nil)
+	fmt.Printf("上传服务已启动，监听： %s\n", config.UploadServiceHost)
+	err := http.ListenAndServe(config.UploadServiceHost, nil)
 	if err != nil {
 		log.Println(err.Error())
 	}

@@ -7,8 +7,8 @@ import (
 	"github.com/cloud/config"
 	"github.com/cloud/db"
 	"github.com/cloud/meta"
+	"github.com/cloud/mq"
 	"github.com/cloud/store/ceph"
-	"github.com/cloud/store/oss"
 	"github.com/cloud/util"
 	"io"
 	"io/ioutil"
@@ -92,13 +92,32 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 			fileMeta.Location = cephPath
 		} else if config.CurrentStoreType == common.StoreOSS {
 			// 文件写入OSS
+
+			// 文件的同步转移逻辑
 			ossPath := "oss/" + fileMeta.FileSha1
-			err = oss.Bucket().PutObject(ossPath, newFile)
+			//err = oss.Bucket().PutObject(ossPath, newFile)
+			//if err != nil {
+			//	log.Println(err.Error())
+			//	w.Write([]byte("Upload file to oss failed"))
+			//	return
+			//}
+
+			// 借助转移队列的异步转移逻辑
+			data := mq.TransferData{
+				FileHash:      fileMeta.FileSha1,
+				Location:      fileMeta.Location,
+				DestLocation:  ossPath,
+				DestStoreType: common.StoreOSS,
+			}
+			pubData, err := json.Marshal(data)
 			if err != nil {
 				log.Println(err.Error())
-				w.Write([]byte("Upload file to oss failed"))
-				return
+				// TODO: 加入任务重发
 			}
+			if success := mq.Publish(config.TransExchangeName, config.TransOSSRoutingKey, pubData); !success {
+				// TODO: 加入任务重发
+			}
+
 			fileMeta.Location = ossPath
 		} else {
 			fileMeta.Location = mergePath

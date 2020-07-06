@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"database/sql"
+	"github.com/cloud/config"
 	_ "github.com/go-sql-driver/mysql"
 	"log"
 	"os"
@@ -12,7 +13,7 @@ var (
 )
 
 func init() {
-	db, err := sql.Open("mysql", "root:123456@tcp(localhost:13306)/fileserver?charset=utf8")
+	db, err := sql.Open("mysql", config.MySQLSource)
 	if err != nil {
 		log.Println(err.Error())
 		os.Exit(1)

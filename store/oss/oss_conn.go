@@ -55,4 +55,12 @@ func BuildLifeCycleRules(bucket string) {
 	Client().SetBucketLifecycle(bucket, rules)
 }
 
+// GenObjectMeta : 获取bucket内object的元信息
+func GenObjectMeta(filename string) []oss.Option {
+	options := []oss.Option{
+		oss.ContentDisposition(filename),
+	}
+	return options
+}
+
 

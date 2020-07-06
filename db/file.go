@@ -142,3 +142,30 @@ func OnFileRemoved(filehash string) bool {
 
 	return false
 }
+
+// UpdateFileLocaton : 文件异步转移之后需要更新文件的最终存储地址
+func UpdateFileLocaton(filehash string, location string) bool {
+	stmt, err := mysql.DBConn().Prepare("update tbl_file set file_addr=? where file_sha1=? limit 1")
+	if err != nil {
+		log.Println(err.Error())
+		return false
+	}
+	defer stmt.Close()
+
+	rf, err := stmt.Exec(location, filehash)
+	if err != nil {
+		log.Println(err.Error())
+		return false
+	}
+
+	if rows, err := rf.RowsAffected(); err == nil {
+		if rows <= 0 {
+			log.Printf("file with hash: %s does not exist\n", filehash)
+		}
+		return true
+	}
+
+	return false
+}
+
+
