@@ -73,7 +73,7 @@ func GetFileSize(filename string) int64 {
 	return result
 }
 
-// Hex2Dec : 十六进制转十进制
+// Hex2Dec: 十六进制转十进制
 func Hex2Dec(val string) int64 {
 	n, err := strconv.ParseInt(val, 16, 0)
 	if err != nil {

@@ -6,6 +6,7 @@ package util
 
 import (
 	"fmt"
+	"github.com/cloud/config"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -54,9 +55,8 @@ const (
 	// FileChunksDelCMD : 删除文件分块
 	FileChunksDelCMD = `
 	#!/bin/bash
+	chunkDir="#CHUNKDIR#"
 	targetDir=$1
-	chunkDir="/data/fileserver_part/"
-	
 	# 增加条件判断，避免误删  (指定的路径包含且不等于chunkDir)
 	if [[ $targetDir =~ $chunkDir ]] && [[ $targetDir != $chunkDir ]]; then 
 	  rm -rf $targetDir
@@ -68,6 +68,7 @@ const (
 // @return bool: 合并成功将返回true, 否则返回false
 func RemovePathByShell(destPath string) bool {
 	cmdStr := strings.Replace(FileChunksDelCMD, "$1", destPath, 1)
+	cmdStr = strings.Replace(cmdStr, "#CHUNKDIR#", config.ChunkLocalRootDir, 1)
 	delCmd := exec.Command("bash", "-c", cmdStr)
 	if _, err := delCmd.Output(); err != nil {
 		fmt.Println(err)
@@ -126,6 +127,7 @@ func MergeChuncksByShell(chunkDir string, destPath string, fileSha1 string) bool
 		fmt.Println(err)
 		return false
 	} else if string(filehash) != fileSha1 { // 判断文件hash是否符合给定值
+		// fmt.Println(filehash + " " + fileSha1)
 		return false
 	} else {
 		fmt.Println("check sha1: " + destPath + " " + filehash + " " + fileSha1)

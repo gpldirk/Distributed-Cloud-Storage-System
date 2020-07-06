@@ -13,7 +13,7 @@ func main() {
 		http.StripPrefix("/static/",
 			http.FileServer(http.Dir("./static"))))
 
-	// 路由接口设置
+	// 文件路由接口设置
 	http.HandleFunc("/file/upload", handler.HTTPInterceptor(handler.UploadHandler))
 	http.HandleFunc("/file/upload/suc", handler.HTTPInterceptor(handler.UploadSucHandler))
 	http.HandleFunc("/file/meta", handler.HTTPInterceptor(handler.GetFileMetaHandler))
@@ -21,6 +21,7 @@ func main() {
 	http.HandleFunc("/file/update", handler.HTTPInterceptor(handler.UpdateFileMetaHandler))
 	http.HandleFunc("/file/delete", handler.HTTPInterceptor(handler.DeleteFileHandler))
 	http.HandleFunc("/file/download", handler.HTTPInterceptor(handler.DownloadHandler))
+	http.HandleFunc("/file/download/range", handler.HTTPInterceptor(handler.RangeDownloadHandler))
 	http.HandleFunc("/file/downloadurl", handler.HTTPInterceptor(handler.DownloadURLHandler))
 
 	// 秒传接口
