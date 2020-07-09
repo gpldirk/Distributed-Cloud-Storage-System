@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/cloud/db"
 	"github.com/cloud/util"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"time"
 )
@@ -13,83 +14,97 @@ const (
 	token_salt = "token_salt"
 )
 
-// SignUpHandler : 处理用户注册请求
-func SignUpHandler(w http.ResponseWriter, r *http.Request) {
+// SignUpHandler : 处理用户注册get请求
+func SignUpHandler(c *gin.Context) {
 	// 返回signup页面
-	if r.Method == "GET" {
-		http.Redirect(w, r, "/static/view/signup.html", http.StatusFound)
-		return
-	} else if r.Method == http.MethodPost {
-		// 用户注册信息以表单形式提交
-		r.ParseForm()
-		username := r.Form.Get("username")
-		password := r.Form.Get("password")
-		if len(username) < 3 || len(password) < 5 {
-			w.Write([]byte("Invalid parameters"))
-			return
-		}
+	c.Redirect(http.StatusFound, "/static/view/signup.html")
+	return
+}
 
-		encodedPWD := util.Sha1([]byte(password + password_salt))
-		success := db.UserSignUp(username, encodedPWD)
-		if success {
-			w.Write([]byte("SUCCESS"))
-		} else {
-			w.Write([]byte("FAILED"))
-		}
+// DoSignUpHandler : 处理用户注册post请求
+func DoSignUpHandler(c *gin.Context) {
+	// 用户注册信息以表单形式提交
+	username := c.Request.FormValue("username")
+	password := c.Request.FormValue("password")
+	if len(username) < 3 || len(password) < 5 {
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Invalid parameters",
+			"code": -1,
+		})
+		return
+	}
+
+	encodedPWD := util.Sha1([]byte(password + password_salt))
+	success := db.UserSignUp(username, encodedPWD)
+	if success {
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Signup succeeded",
+			"code": 0,
+		})
+	} else {
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Signup failed",
+			"code": -2,
+		})
 	}
 }
 
-// SignInHandler ： 处理用户登陆请求
-func SignInHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		http.Redirect(w, r, "/static/view/signin.html", http.StatusFound)
+// SignInHandler ： 处理用户登陆get请求
+func SignInHandler(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/static/view/signin.html")
+	return
+}
+
+// DoSignInHandler : 处理用户登陆post请求
+func DoSignInHandler(c *gin.Context) {
+	// 1 解析请求参数
+	username := c.Request.FormValue("username")
+	password := c.Request.FormValue("password")
+
+	// 2 校验用户名和密码
+	encodedPWD := util.Sha1([]byte(password + password_salt))
+	PWDchecked := db.UserSignIn(username, encodedPWD)
+	if !PWDchecked {
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Signin failed",
+			"code": -1,
+		})
 		return
-	} else if r.Method == "POST" {
-		// 1 解析请求参数
-		r.ParseForm()
-		username := r.Form.Get("username")
-		password := r.Form.Get("password")
-
-		// 2 校验用户名和密码
-		encodedPWD := util.Sha1([]byte(password + password_salt))
-		PWDchecked := db.UserSignIn(username, encodedPWD)
-		if !PWDchecked {
-			w.Write([]byte("FAILED"))
-			return
-		}
-
-		// 3 生成返回访问凭证40位token
-		token := GenToken(username)
-		success := db.UpdateToken(username, token)
-		if !success {
-			w.Write([]byte("FAILED"))
-			return
-		}
-
-		// 4 重定向到首页: 发送重定向的url
-		resp := util.RespMsg {
-			Code: 0,
-			Msg:  "OK",
-			Data: struct {
-				Location string
-				Username string
-				Token    string
-			}{
-				Location: "http://" + r.Host + "/static/view/home.html",
-				Username: username,
-				Token:    token,
-			},
-		}
-
-		w.Write(resp.JSONBytes())
 	}
+
+	// 3 生成返回访问凭证40位token
+	token := GenToken(username)
+	success := db.UpdateToken(username, token)
+	if !success {
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Signin failed",
+			"code": -2,
+		})
+		return
+	}
+
+	// 4 重定向到首页: 发送重定向的url
+	resp := util.RespMsg {
+		Code: 0,
+		Msg:  "OK",
+		Data: struct {
+			Location string
+			Username string
+			Token    string
+		}{
+			Location: "/static/view/home.html",
+			Username: username,
+			Token:    token,
+		},
+	}
+
+	c.Data(http.StatusOK, "application/json", resp.JSONBytes())
 }
 
 // UserInfoHandler : 获取指定用户信息
-func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
+func UserInfoHandler(c *gin.Context) {
 	// 1 解析请求参数
-	r.ParseForm()
-	username := r.Form.Get("username")
+	username := c.Request.FormValue("username")
 	// token := r.Form.Get("token")
 
 	// 2 验证token是否有效
@@ -102,7 +117,7 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 	// 3 查询用户信息
 	user, err := db.GetUserInfo(username)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		c.JSON(http.StatusOK, "Internal server error")
 		return
 	}
 
@@ -112,7 +127,7 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 		Msg:  "OK",
 		Data: user,
 	}
-	w.Write(resp.JSONBytes())
+	c.Data(http.StatusOK, "application/json", resp.JSONBytes())
 }
 
 // GenToken : 为指定user生成40位token　

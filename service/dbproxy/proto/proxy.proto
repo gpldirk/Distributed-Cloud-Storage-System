@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package go.micro.service.dbproxy;
+
+service DBProxyService {
+  // 执行sql命令
+  rpc ExecuteAction(ReqExec) returns (RespExec) {}
+}
+
+message SingleAction {
+  string name = 1;
+  bytes params = 2;
+}
+
+message ReqExec {
+  bool sequence = 1;
+  bool transaction = 2;
+  int32 resultType = 3;
+  repeated SingleAction action = 4;
+}
+
+message RespExec {
+  int32 code = 1;
+  string msg = 2;
+  bytes data = 3;
+}

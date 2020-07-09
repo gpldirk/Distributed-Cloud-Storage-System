@@ -7,8 +7,10 @@ import (
 	"github.com/cloud/db"
 	"github.com/cloud/mq"
 	"github.com/cloud/store/oss"
+	"github.com/micro/go-micro"
 	"log"
 	"os"
+	"time"
 )
 
 func ProcessTransferData(msg []byte) bool {
@@ -43,7 +45,20 @@ func ProcessTransferData(msg []byte) bool {
 	return true
 }
 
-func main() {
+func startRPCService() {
+	service := micro.NewService(
+		micro.Name("go.micro.service.transfer"),
+		micro.RegisterTTL(time.Second * 10),
+		micro.RegisterInterval(time.Second * 5),
+		micro.Registry(config.RegistryConsul()))
+	service.Init()
+
+	if err := service.Run(); err != nil {
+		log.Println(err.Error())
+	}
+}
+
+func startTransferService() {
 	if !config.AsyncTransferEnable {
 		log.Println("异步转移文件功能目前被禁用，请检查相关配置")
 		return
@@ -52,3 +67,12 @@ func main() {
 	log.Println("文件转移服务启动中，开始监听转移队列...")
 	mq.StartConsume(config.TransOSSQueueName, "transfer_oss", ProcessTransferData)
 }
+
+func main() {
+	// 异步启动文件转移服务
+	go startTransferService()
+
+	// rpc 服务
+	startRPCService()
+}
+

@@ -2,24 +2,25 @@ package handler
 
 import (
 	"github.com/cloud/util"
+	"github.com/gin-gonic/gin"
 	"net/http"
 )
 
 // HTTPInterceptor : HTTP请求拦截器使用闭包实现
-func HTTPInterceptor(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		username := r.Form.Get("username")
-		token := r.Form.Get("token")
+func HTTPInterceptor() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		username := c.Request.FormValue("username")
+		token := c.Request.FormValue("token")
 		if len(username) < 3 || !IsTokenValid(username, token) {
+			c.Abort() // 告知后面的handler不再执行
 			resp := util.RespMsg{
-				Code: http.StatusUnauthorized,
+				Code: http.StatusOK,
 				Msg:  "Invalid Token",
 				Data: nil,
 			}
-			w.Write(resp.JSONBytes())
+			c.Data(http.StatusOK, "application/json", resp.JSONBytes())
 			return
 		}
-		h(w, r)
+		c.Next() // 执行下一个handler
 	}
 }

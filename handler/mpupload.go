@@ -6,6 +6,7 @@ import (
 	"github.com/cloud/db"
 	"github.com/cloud/util"
 	rPool "github.com/cloud/cache/redis"
+	"github.com/gin-gonic/gin"
 	"github.com/gomodule/redigo/redis"
 	"log"
 	"math"
@@ -51,20 +52,25 @@ func init() {
 }
 
 // InitialMultipartUploadHandler : 初始化分块上传
-func InitialMultipartUploadHandler(w http.ResponseWriter, r *http.Request) {
+func InitialMultipartUploadHandler(c *gin.Context) {
 	// 1 解析用户请求
-	r.ParseForm()
-	username := r.Form.Get("username")
-	filehash := r.Form.Get("filehash")
-	filesize, err := strconv.Atoi(r.Form.Get("filesize"))
+	username := c.Request.FormValue("username")
+	filehash := c.Request.FormValue("filehash")
+	filesize, err := strconv.Atoi(c.Request.FormValue("filesize"))
 	if err != nil {
 		log.Println(err.Error())
-		w.Write(util.NewRespMsg(http.StatusBadRequest, "Invalid parameters", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Invalid parameters",
+			"code": -1,
+		})
 		return
 	}
 	// 判断文件是否存在
 	if db.IsUserFileUploaded(username, filehash) {
-		w.Write(util.NewRespMsg(http.StatusOK, "File has been uploaded before", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "File has been uploaded before",
+			"code": -1,
+		})
 		return
 	}
 
@@ -79,7 +85,10 @@ func InitialMultipartUploadHandler(w http.ResponseWriter, r *http.Request) {
 		uploadID, err = redis.String(rConn.Do("GET", UploadIDKeyPrefix + filehash))
 		if err != nil {
 			log.Println(err.Error())
-			w.Write(util.NewRespMsg(http.StatusInternalServerError, "Internal server error", nil).JSONBytes())
+			c.JSON(http.StatusOK, gin.H{
+				"msg": "Internal server error",
+				"code": -1,
+			})
 			return
 		}
 	}
@@ -93,7 +102,10 @@ func InitialMultipartUploadHandler(w http.ResponseWriter, r *http.Request) {
 		chunks, err := redis.Values(rConn.Do("HGETALL", ChunkKeyPrefix + uploadID))
 		if err != nil {
 			log.Println(err.Error())
-			w.Write(util.NewRespMsg(http.StatusInternalServerError, "Internal server error", nil).JSONBytes())
+			c.JSON(http.StatusOK, gin.H{
+				"msg": "Internal server error",
+				"code": -1,
+			})
 			return
 		}
 
@@ -129,17 +141,16 @@ func InitialMultipartUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 7 将初始化信息返回客户端
-	w.Write(util.NewRespMsg(http.StatusOK, "OK", uploadInfo).JSONBytes())
+	c.Data(http.StatusOK, "application/json", util.NewRespMsg(http.StatusOK, "OK", uploadInfo).JSONBytes())
 }
 
 // UploadPartHandler : 上传文件块，并保存其元信息到redis
-func UploadPartHandler(w http.ResponseWriter, r *http.Request) {
+func UploadPartHandler(c *gin.Context) {
 	// 1 解析用户请求参数
-	r.ParseForm()
-	// username := r.Form.Get("username")
-	uploadID := r.Form.Get("uploadid")
-	chunkhash := r.Form.Get("chkhash") // 校验文件块是否完整
-	chunkIndex := r.Form.Get("index")
+	// username := c.Request.FormValue("username")
+	uploadID := c.Request.FormValue("uploadid")
+	chunkhash := c.Request.FormValue("chkhash") // 校验文件块是否完整
+	chunkIndex := c.Request.FormValue("index")
 
 	// 2 获取redis的一个连接
 	rConn := rPool.Pool().Get()
@@ -151,14 +162,14 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request) {
 	f, err := os.Create(filepath) // 然后创建文件获得文件句柄
 	if err != nil {
 		log.Println(err.Error())
-		w.Write(util.NewRespMsg(http.StatusInternalServerError, "Upload part failed", nil).JSONBytes())
+		c.Data(http.StatusOK, "application/json", util.NewRespMsg(http.StatusInternalServerError, "Upload part failed", nil).JSONBytes())
 		return
 	}
 	defer f.Close()
 
 	buff := make([]byte, 1024 * 1024) // 每次读取1MB, 分块hash校验 - 和客户端文件块hash值对比判断文件块是否修改或丢失
 	for {
-		n, err := r.Body.Read(buff)
+		n, err := c.Request.Body.Read(buff)
 		f.Write(buff[:n])
 		if err != nil {
 			break
@@ -169,7 +180,10 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request) {
 	cmpHash, err := util.ComputeSha1ByShell(filepath)
 	if err != nil || cmpHash != chunkhash {
 		log.Printf("Verify chunk failed, computing hash: %s, chunk hash: %s\n", cmpHash, chunkhash)
-		w.Write(util.NewRespMsg(http.StatusNotAcceptable, "Verify chunk hash failed", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Verify chunk hash failed",
+			"code": -1,
+		})
 		return
 	}
 
@@ -177,18 +191,20 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request) {
 	rConn.Do("HSET", ChunkKeyPrefix + uploadID, "chkidx_" + chunkIndex, 1)
 
 	// 5 返回处理结果给客户端
-	w.Write(util.NewRespMsg(http.StatusOK, "OK", nil).JSONBytes())
+	c.JSON(http.StatusOK, gin.H{
+		"msg": "OK",
+		"code": 0,
+	})
 }
 
 // CompleteUploadHandler : 进行文件块合并
-func CompleteUploadHandler(w http.ResponseWriter, r *http.Request) {
+func CompleteUploadHandler(c *gin.Context) {
 	// 1 解析请求参数
-	r.ParseForm()
-	username := r.Form.Get("username")
-	uploadID := r.Form.Get("uploadid")
-	filehash := r.Form.Get("filehash")
-	filesize, _ := strconv.Atoi(r.Form.Get("filesize"))
-	filename := r.Form.Get("filename")
+	username := c.Request.FormValue("username")
+	uploadID := c.Request.FormValue("uploadid")
+	filehash := c.Request.FormValue("filehash")
+	filesize, _ := strconv.Atoi(c.Request.FormValue("filesize"))
+	filename := c.Request.FormValue("filename")
 
 	// 2 获取redis的一个连接
 	rConn := rPool.Pool().Get()
@@ -198,7 +214,10 @@ func CompleteUploadHandler(w http.ResponseWriter, r *http.Request) {
 	data, err := redis.Values(rConn.Do("HGETALL", ChunkKeyPrefix + uploadID))
 	if err != nil {
 		log.Println(err.Error())
-		w.Write(util.NewRespMsg(http.StatusInternalServerError, "Internal server error", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Internal server error",
+			"code": -1,
+		})
 		return
 	}
 
@@ -215,14 +234,20 @@ func CompleteUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if totalCount != chunkCount {
-		w.Write(util.NewRespMsg(http.StatusBadRequest, "Invalid request", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Invalid request",
+			"code": -1,
+		})
 		return
 	}
 
 	// 4 合并文件块
-	if mergeSuc := util.MergeChuncksByShell(ChunkDir + uploadID, MergeDir + filehash, filehash); !mergeSuc {
+	if success := util.MergeChuncksByShell(ChunkDir + uploadID, MergeDir + filehash, filehash); !success {
 		log.Println("Merge chunk files failed")
-		w.Write(util.NewRespMsg(http.StatusInternalServerError, "Merge chunk files failed", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Merge chunk files failed",
+			"code":  -1,
+		})
 		return
 	}
 
@@ -235,25 +260,33 @@ func CompleteUploadHandler(w http.ResponseWriter, r *http.Request) {
 	delUploadID, delUploadInfoErr := redis.Int64(rConn.Do("DEL", ChunkKeyPrefix + uploadID))
 	if delUploadID != 1 || delHashErr != nil || delUploadInfoErr != nil {
 		log.Println("Failed to delete meta data from redis")
-		w.Write(util.NewRespMsg(http.StatusInternalServerError, "Internal server error", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Failed to delete meta data from redis",
+			"code": -1,
+		})
 		return
 	}
 
 	// 删除已经上传的文件块
 	if delRes := util.RemovePathByShell(ChunkDir + uploadID); ! delRes {
 		log.Printf("Failed to delete chunk files with uploadID: %s\n", uploadID)
-		w.Write(util.NewRespMsg(http.StatusInternalServerError, "Internal server error", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Failed to delete local file",
+			"code": -1,
+		})
 	}
 
 	// 6 返回处理结果给客户端
-	w.Write(util.NewRespMsg(http.StatusOK, "OK", nil).JSONBytes())
+	c.JSON(http.StatusOK, gin.H{
+		"msg": "ok",
+		"code": 0,
+	})
 }
 
 // CancelUploadHandler : 取消文件分块上传
-func CancelUploadHandler(w http.ResponseWriter, r *http.Request) {
+func CancelUploadHandler(c *gin.Context) {
 	// 1 解析请求参数
-	r.ParseForm()
-	filehash := r.Form.Get("filehash")
+	filehash := c.Request.FormValue("filehash")
 
 	// 2 获取redis的一个连接
 	rConn := rPool.Pool().Get()
@@ -263,13 +296,19 @@ func CancelUploadHandler(w http.ResponseWriter, r *http.Request) {
 	uploadID, err := redis.String(rConn.Do("GET", UploadIDKeyPrefix + filehash))
 	if err != nil {
 		log.Println(err.Error())
-		w.Write(util.NewRespMsg(http.StatusInternalServerError, "Internal server error", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Internal server error",
+			"code": -1,
+		})
 		return
 	}
 	_, delHashErr := rConn.Do("DEL", UploadIDKeyPrefix + filehash)
 	_, delUploadInfoErr := rConn.Do("DEL", ChunkKeyPrefix + uploadID)
 	if delHashErr != nil || delUploadInfoErr != nil {
-		w.Write(util.NewRespMsg(http.StatusInternalServerError, "Internal server error", nil).JSONBytes())
+		c.JSON(http.StatusOK, gin.H{
+			"msg": "Internal server error",
+			"code": -1,
+		})
 		return
 	}
 
@@ -280,5 +319,8 @@ func CancelUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5 返回处理结果给用户
-	w.Write(util.NewRespMsg(http.StatusOK, "OK", nil).JSONBytes())
+	c.JSON(http.StatusOK, gin.H{
+		"msg": "ok",
+		"code": 0,
+	})
 }

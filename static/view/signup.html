@@ -1,16 +1,16 @@
 <html>
 
 <head>
-    <script src="/x/js/jquery.min.js"></script>
-    <script src="/x/js/popper.min.js"></script>
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
     <!-- 最新版本的 Bootstrap 核心 CSS 文件 -->
-    <link rel="stylesheet" href="/x/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
 
     <!-- 可选的 Bootstrap 主题文件（一般不用引入） -->
-    <link rel="stylesheet" href="/x/css/bootstrap-theme.min.css">
+    <link rel="stylesheet" href="/static/css/bootstrap-theme.min.css">
 
     <!-- 最新的 Bootstrap 核心 JavaScript 文件 -->
-    <script src="/x/js/bootstrap.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
     <script lang="javascript">
     </script>
 </head>
@@ -65,7 +65,8 @@
             <td>
             </td>
             <td>
-              <input class="btn btn-success" type="button" style="margin:0 auto;width:250px;" value="点击注册" onclick='onSignup()' />
+              <input class="btn btn-success" type="button" style="margin:0 auto;width:250px;" value="点击注册"
+                onclick='onSignup()' />
               <label name='login_hint' id='login_hint' style='display:none'>注册成功，２秒后跳转到登录页面...</label>
             </td>
           </tr>
@@ -87,21 +88,18 @@
         "password": password.value
       },
       error: function (err) {
-          alert(textStatus);
+        alert(JSON.stringify(err));
       },
-      success: function (data) {
-        if (data == 'SUCCESS') {
-          // 成功后跳到登录页
-          document.getElementById("login_hint").style.display = "block";
-          setTimeout(() => {
-            window.location.href = '../../view/signin.html';
-          }, 2000);
-
+      success: function (resp) {
+        if (resp.code == 10000) {
+          alert("注册成功");
+          window.location.href = "/user/signin";
         } else {
-          alert('注册失败');
+          alert("注册失败");
         }
       }
     });
   }
 </script>
+
 </html>
