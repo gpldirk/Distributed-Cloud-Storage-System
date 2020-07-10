@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-
 	"github.com/cloud/service/dbproxy/config"
-
 	_ "github.com/go-sql-driver/mysql"
 )
 

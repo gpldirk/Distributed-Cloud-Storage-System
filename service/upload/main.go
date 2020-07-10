@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	cmncfg "github.com/cloud/config"
 	"github.com/cloud/service/upload/config"
-	"github.com/cloud/route"
+	"github.com/cloud/service/upload/route"
 	"github.com/micro/go-micro"
-	upProto "github.com/cloud//service/upload/proto"
+	upProto "github.com/cloud/service/upload/proto"
 	upRpc "github.com/cloud/service/upload/rpc"
 	"log"
 	"time"
@@ -16,7 +17,7 @@ func startRPCService() {
 		micro.Name("go.micro.service.upload"),
 		micro.RegisterTTL(time.Second * 10),
 		micro.RegisterInterval(time.Second * 5),
-		micro.Registry(config.RegistryConsul()))
+		micro.Registry(cmncfg.RegistryConsul()))
 	service.Init()
 
 	upProto.RegisterUploadServiceHandler(service.Server(), new(upRpc.Upload))

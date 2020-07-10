@@ -2,119 +2,107 @@ package handler
 
 import (
 	"context"
-	_ "github.com/aliyun/alibaba-cloud-sdk-go/services/dbs"
-	"github.com/cloud/db"
-	"github.com/cloud/config"
-	"github.com/cloud/util"
-	proto "github.com/cloud/service/account/proto"
-	_ "github.com/gin-gonic/gin"
-	"net/http"
-	"time"
 	"fmt"
+	"time"
+
+	"github.com/cloud/common"
+	"github.com/cloud/config"
+	proto "github.com/cloud/service/account/proto"
+	DBcli "github.com/cloud/service/dbproxy/client"
+	"github.com/cloud/util"
 )
 
-// 用于实现UserServiceHandler接口的对象
-type User struct {}
+// User : 用于实现UserServiceHandler接口的对象
+type User struct{}
 
-// SignUp : 处理用户注册请求
+// GenToken : 生成token
+func GenToken(username string) string {
+	// 40位字符:md5(username+timestamp+token_salt)+timestamp[:8]
+	ts := fmt.Sprintf("%x", time.Now().Unix())
+	tokenPrefix := util.MD5([]byte(username + ts + "_tokensalt"))
+	return tokenPrefix + ts[:8]
+}
+
+// Signup : 处理用户注册请求
 func (user *User) Signup(ctx context.Context, req *proto.ReqSignup, res *proto.RespSignup) error {
-	// 用户注册信息以表单形式提交
 	username := req.Username
-	password := req.Password
-	if len(username) < 3 || len(password) < 5 {
-		res.Code = http.StatusBadRequest
-		res.Message = "Invalid parameters"
+	passwd := req.Password
+
+	// 参数简单校验
+	if len(username) < 3 || len(passwd) < 5 {
+		res.Code = common.StatusParamInvalid
+		res.Message = "注册参数无效"
 		return nil
 	}
 
-	encodedPWD := util.Sha1([]byte(password + config.Password_salt))
-	success := db.UserSignUp(username, encodedPWD)
-	if success {
-		res.Code = http.StatusOK
-		res.Message = "Signup succeeded"
+	// 对密码进行加盐及取Sha1值加密
+	encPasswd := util.Sha1([]byte(passwd + config.Password_salt))
+	// 将用户信息注册到用户表中
+	dbResp, err := DBcli.UserSignup(username, encPasswd)
+	if err == nil && dbResp.Suc {
+		res.Code = common.StatusOK
+		res.Message = "注册成功"
 	} else {
-		res.Code = http.StatusInternalServerError
-		res.Message = "Signup failed"
+		res.Code = common.StatusRegisterFailed
+		res.Message = "注册失败"
 	}
-
 	return nil
 }
 
+// Signin : 处理用户登录请求
 func (user *User) Signin(ctx context.Context, req *proto.ReqSignin, res *proto.RespSignin) error {
 	username := req.Username
 	password := req.Password
 
-	// 1 校验用户名和密码
-	encodedPWD := util.Sha1([]byte(password + config.Password_salt))
-	PWDchecked := db.UserSignIn(username, encodedPWD)
-	if !PWDchecked {
-		res.Message = "Signin failed"
-		res.Code = http.StatusUnauthorized
+	encPasswd := util.Sha1([]byte(password + config.Password_salt))
+
+	// 1. 校验用户名及密码
+	dbResp, err := DBcli.UserSignin(username, encPasswd)
+	if err != nil || !dbResp.Suc {
+		res.Code = common.StatusLoginFailed
 		return nil
 	}
 
-	// 3 生成返回访问凭证40位token
+	// 2. 生成访问凭证(token)
 	token := GenToken(username)
-	success := db.UpdateToken(username, token)
-	if success {
-		res.Message = "Signin failed"
-		res.Code = http.StatusUnauthorized
-		return nil
-	} else {
-		res.Message = "Signin succeeded"
-		res.Code = http.StatusOK
-		return nil
-	}
-}
-
-// GenToken : 为指定user生成40位token　
-func GenToken(username string) string {
-	// 40位token = MD5(username + timestamp + token_salt) + timestamp[:8]
-	timestamp := fmt.Sprintf("%x", time.Now().Unix())
-	tokenPrefix := util.MD5([]byte(username + timestamp + token_salt))
-	return tokenPrefix + timestamp[:8]
-}
-
-// IsTokenValid : 判断token是否有效
-func IsTokenValid(username, token string) bool {
-	// 1 判断token的时效性
-	if len(token) != 40 {
-		return false
-	}
-	tokenTS := token[32:40]
-	if util.Hex2Dec(tokenTS) < time.Now().Unix() - 86400 { // 假设时效性为一天
-		return false
-	}
-
-	// 2 从DB查询username对应的token进行对比是否一致
-	if db.GetUserToken(username) != token {
-		return false
-	} else {
-		return true
-	}
-}
-
-
-// UserInfoHandler : 获取指定用户信息
-func UserInfoHandler(ctx context.Context, req *proto.ReqUserInfo, res *proto.RespUserInfo) error {
-	// 1 解析请求参数
-	username := req.Username
-
-	// 2 查询用户信息
-	user, err := db.GetUserInfo(username)
-	if err != nil {
-		res.Code = http.StatusOK
-		res.Message = "Internal server error"
+	upRes, err := DBcli.UpdateToken(username, token)
+	if err != nil || !upRes.Suc {
+		res.Code = common.StatusServerError
 		return nil
 	}
 
-	res.Code = http.StatusOK
-	res.Username = user.Username
-	res.SignupAt = user.SignUpAt
-	res.LastActiveAt = user.LastActiveAt
-	res.Status = int32(user.Status)
-	res.Email = user.Email
-	res.Phone = user.Phone
+	// 3. 登录成功, 返回token
+	res.Code = common.StatusOK
+	res.Token = token
 	return nil
 }
 
+// UserInfo ： 查询用户信息
+func (user *User) UserInfo(ctx context.Context, req *proto.ReqUserInfo, res *proto.RespUserInfo) error {
+	// 查询用户信息
+	dbResp, err := DBcli.GetUserInfo(req.Username)
+	if err != nil {
+		res.Code = common.StatusServerError
+		res.Message = "服务错误"
+		return nil
+	}
+	// 查不到对应的用户信息
+	if !dbResp.Suc {
+		res.Code = common.StatusUserNotExists
+		res.Message = "用户不存在"
+		return nil
+	}
+
+	u := DBcli.ToTableUser(dbResp.Data)
+
+	// 3. 组装并且响应用户数据
+	res.Code = common.StatusOK
+	res.Username = u.Username
+	res.SignupAt = u.SignupAt
+	res.LastActiveAt = u.LastActiveAt
+	res.Status = int32(u.Status)
+	// TODO: 需增加接口支持完善用户信息(email/phone等)
+	res.Email = u.Email
+	res.Phone = u.Phone
+	return nil
+}

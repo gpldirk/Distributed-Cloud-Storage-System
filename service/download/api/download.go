@@ -10,9 +10,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/cloud/common"
-	cfg "github.com/cloud/config"
+	"github.com/cloud/config"
 	dbcli "github.com/cloud/service/dbproxy/client"
 	"github.com/cloud/store/ceph"
 	"github.com/cloud/store/oss"
@@ -36,7 +35,7 @@ func DownloadURLHandler(c *gin.Context) {
 	tblFile := dbcli.ToTableFile(dbResp.Data)
 
 	// TODO: 判断文件存在OSS，还是Ceph，还是在本地
-	if strings.HasPrefix(tblFile.FileAddr.String, cfg.MergeLocalRootDir) ||
+	if strings.HasPrefix(tblFile.FileAddr.String, config.MergeLocalRootDir) ||
 		strings.HasPrefix(tblFile.FileAddr.String, config.CephRootDir) {
 		username := c.Request.FormValue("username")
 		token := c.Request.FormValue("token")
@@ -72,7 +71,7 @@ func DownloadHandler(c *gin.Context) {
 	uniqFile := dbcli.ToTableFile(fResp.Data)
 	userFile := dbcli.ToTableUserFile(ufResp.Data)
 
-	if strings.HasPrefix(uniqFile.FileAddr.String, cfg.MergeLocalRootDir) {
+	if strings.HasPrefix(uniqFile.FileAddr.String, config.MergeLocalRootDir) {
 		// 本地文件， 直接下载
 		c.FileAttachment(uniqFile.FileAddr.String, userFile.FileName)
 	} else if strings.HasPrefix(uniqFile.FileAddr.String, config.CephRootDir) {
@@ -127,7 +126,7 @@ func RangeDownloadHandler(c *gin.Context) {
 	userFile := dbcli.ToTableUserFile(ufResp.Data)
 
 	// 使用本地目录文件
-	fpath := cfg.MergeLocalRootDir + fsha1
+	fpath := config.MergeLocalRootDir + fsha1
 	fmt.Println("range-download-fpath: " + fpath)
 
 	f, err := os.Open(fpath)

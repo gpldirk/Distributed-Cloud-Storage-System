@@ -14,21 +14,21 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/cloud/common"
-	"github.com/cloud/config"
+	cmnCfg "github.com/cloud/config"
 	"github.com/cloud/mq"
-	dbcli "github.com/cloud//service/dbproxy/client"
-	"github.com/cloud//store/ceph"
-	"github.com/cloud//store/oss"
-	"github.com/cloud//util"
+	dbcli "github.com/cloud/service/dbproxy/client"
+	"github.com/cloud/store/ceph"
+	"github.com/cloud/store/oss"
+	"github.com/cloud/util"
 )
 
 func init() {
-	if err := os.MkdirAll(config.TempLocalRootDir, 0744); err != nil {
-		fmt.Println("无法指定目录用于存储临时文件: " + config.TempLocalRootDir)
+	if err := os.MkdirAll(cmnCfg.TempLocalRootDir, 0744); err != nil {
+		fmt.Println("无法指定目录用于存储临时文件: " + cmnCfg.TempLocalRootDir)
 		os.Exit(1)
 	}
-	if err := os.MkdirAll(config.MergeLocalRootDir, 0744); err != nil {
-		fmt.Println("无法指定目录用于存储合并后文件: " + config.MergeLocalRootDir)
+	if err := os.MkdirAll(cmnCfg.MergeLocalRootDir, 0744); err != nil {
+		fmt.Println("无法指定目录用于存储合并后文件: " + cmnCfg.MergeLocalRootDir)
 		os.Exit(1)
 	}
 }
@@ -78,7 +78,7 @@ func DoUploadHandler(c *gin.Context) {
 	}
 
 	// 4. 将文件写入临时存储位置
-	fileMeta.Location = config.MergeLocalRootDir + fileMeta.FileSha1 // 存储地址
+	fileMeta.Location = cmnCfg.MergeLocalRootDir + fileMeta.FileSha1 // 存储地址
 	newFile, err := os.Create(fileMeta.Location)
 	if err != nil {
 		log.Printf("Failed to create file, err:%s\n", err.Error())
@@ -96,17 +96,17 @@ func DoUploadHandler(c *gin.Context) {
 
 	// 5. 同步或异步将文件转移到Ceph/OSS
 	newFile.Seek(0, 0) // 游标重新回到文件头部
-	if config.CurrentStoreType == common.StoreCeph {
+	if cmnCfg.CurrentStoreType == common.StoreCeph {
 		// 文件写入Ceph存储
 		data, _ := ioutil.ReadAll(newFile)
-		cephPath := config.CephRootDir + fileMeta.FileSha1
+		cephPath := cmnCfg.CephRootDir + fileMeta.FileSha1
 		_ = ceph.PutObject("userfile", cephPath, data)
 		fileMeta.Location = cephPath
-	} else if config.CurrentStoreType == common.StoreOSS {
+	} else if cmnCfg.CurrentStoreType == common.StoreOSS {
 		// 文件写入OSS存储
-		ossPath := common.OSSRootDir + fileMeta.FileSha1
+		ossPath := cmnCfg.OSSRootDir + fileMeta.FileSha1
 		// 判断写入OSS为同步还是异步
-		if !config.AsyncTransferEnable {
+		if !cmnCfg.AsyncTransferEnable {
 			// TODO: 设置oss中的文件名，方便指定文件名下载
 			err = oss.Bucket().PutObject(ossPath, newFile)
 			if err != nil {
@@ -125,8 +125,8 @@ func DoUploadHandler(c *gin.Context) {
 			}
 			pubData, _ := json.Marshal(data)
 			pubSuc := mq.Publish(
-				config.TransExchangeName,
-				config.TransOSSRoutingKey,
+				cmnCfg.TransExchangeName,
+				cmnCfg.TransOSSRoutingKey,
 				pubData,
 			)
 			if !pubSuc {

@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"github.com/cloud/config"
-	"github.com/cloud/db"
 	"github.com/cloud/mq"
 	"github.com/cloud/store/oss"
 	"github.com/micro/go-micro"
+	dbCli "github.com/cloud/service/dbproxy/client"
 	"log"
 	"os"
 	"time"
@@ -38,11 +38,15 @@ func ProcessTransferData(msg []byte) bool {
 	}
 
 	// 4 更新唯一文件表中文件的存储路径为OSS
-	if success := db.UpdateFileLocaton(pubData.FileHash, pubData.DestLocation); !success {
+	if resp, success := dbCli.UpdateFileLocation(pubData.FileHash, pubData.DestLocation); !success {
+		log.Println(err.Error())
 		return false
+	} else if !resp.Suc {
+		log.Println("更新数据库异常，请检查:" + pubData.FileHash)
+		return false
+	} else {
+		return true
 	}
-
-	return true
 }
 
 func startRPCService() {
@@ -63,7 +67,6 @@ func startTransferService() {
 		log.Println("异步转移文件功能目前被禁用，请检查相关配置")
 		return
 	}
-
 	log.Println("文件转移服务启动中，开始监听转移队列...")
 	mq.StartConsume(config.TransOSSQueueName, "transfer_oss", ProcessTransferData)
 }

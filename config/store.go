@@ -9,6 +9,10 @@ const (
 	MergeLocalRootDir = "./data/fileserver_merge/"
 	// ChunkLocalRootDir : 文件块在本地的存储路径
 	ChunkLocalRootDir = "./data/fileserver_chunk/"
+	// CephRootDir : Ceph存储路径的prefix
+	CephRootDir = "/ceph"
+	// OSSRootDir : OSS存储路径的prefix
+	OSSRootDir = "oss/"
 	// CurrentStoreType : 当前的存储类型
 	CurrentStoreType = common.StoreOSS
 )
